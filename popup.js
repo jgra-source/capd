@@ -155,30 +155,66 @@ function sparkHTML(history) {
 }
 
 // ---- main render ----
+function emptyHTML() {
+  return `
+    <div class="empty fade">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      <h3>No readings yet</h3>
+      <p>Open <b>claude.ai</b> and send a message. If a tab was already open, <b>reload it</b> after installing Capd — the reader only attaches to tabs opened or refreshed after install.</p>
+    </div>`;
+}
+
+function waitingHeadersHTML() {
+  return `
+    <div class="card fade">
+      <div class="card-title">Rate limits</div>
+      <p style="margin:0;font-size:12px;color:var(--muted);line-height:1.5">
+        Waiting for usage headers — these arrive when you <b>send a message</b> on claude.ai. Account data below is already in.
+      </p>
+    </div>`;
+}
+
+function diagnosticsHTML(state) {
+  const raw = (state.rl && state.rl.raw) || {};
+  const headerKeys = Object.keys(raw);
+  const bodyKinds = Object.keys(state.bodies || {});
+  const hdr = headerKeys.length
+    ? headerKeys.map((k) =>
+        `<div class="kv"><span class="k">${esc(k.replace(/^anthropic-ratelimit-?/, ""))}</span><span class="v">${esc(raw[k])}</span></div>`
+      ).join("")
+    : `<div class="kv"><span class="k">ratelimit headers</span><span class="v">0 seen</span></div>`;
+  const body = `<div class="kv"><span class="k">account endpoints</span><span class="v">${bodyKinds.length ? esc(bodyKinds.join(", ")) : "0 seen"}</span></div>`;
+  return `
+    <details class="diag card">
+      <summary class="card-title">Diagnostics</summary>
+      <div style="margin-top:8px">${hdr}${body}</div>
+    </details>`;
+}
+
 function renderMain(state) {
   const main = $("#main");
-  const hasData = !!state.rl;
+  const windows = state.windows || {};
+  const hasHeaders = Object.keys(windows).length > 0;
+  const bodies = state.bodies || {};
+  const hasBodies = Object.keys(bodies).length > 0;
 
-  if (!hasData) {
-    main.innerHTML = `
-      <div class="empty fade">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
-        <h3>No readings yet</h3>
-        <p>Open <b>claude.ai</b> and send a message. Capd reads your usage from the response as you go — then it shows up here.</p>
-      </div>`;
-    return;
+  let html = "";
+  if (!hasHeaders && !hasBodies) {
+    html += emptyHTML();
+  } else {
+    if (hasHeaders) {
+      html += `<div class="gauges">${gaugeHTML(state.session, "Session")}${gaugeHTML(state.weekly, "Weekly")}</div>`;
+      html += extraWindowsHTML(state);
+    } else {
+      html += waitingHeadersHTML();
+    }
+    html += balanceHTML(bodies);
+    html += sparkHTML(state.history);
   }
-
-  let html = `<div class="gauges">
-    ${gaugeHTML(state.session, "Session")}
-    ${gaugeHTML(state.weekly, "Weekly")}
-  </div>`;
-  html += extraWindowsHTML(state);
-  html += balanceHTML(state.bodies);
-  html += sparkHTML(state.history);
+  html += diagnosticsHTML(state);
   main.innerHTML = html;
   tick(); // fill countdowns immediately
 }
@@ -186,13 +222,16 @@ function renderMain(state) {
 function updateStatus(state) {
   const dot = $("#status-dot");
   const text = $("#status-text");
-  if (!state.rl) { dot.className = "dot"; text.textContent = "—"; return; }
-  const age = Date.now() - (state.updatedAt || 0);
-  const stale = age > 5 * 60 * 1000;
+  const bodies = state.bodies || {};
+  let updatedAt = state.updatedAt || 0;
+  for (const k in bodies) if (bodies[k].updatedAt) updatedAt = Math.max(updatedAt, bodies[k].updatedAt);
+  const hasAny = !!state.rl || Object.keys(bodies).length > 0;
+  if (!hasAny) { dot.className = "dot"; text.textContent = "—"; text.dataset.ts = ""; return; }
+  const stale = Date.now() - updatedAt > 5 * 60 * 1000;
   dot.className = "dot " + (stale ? "stale" : "live");
   const status = state.session && state.session.status;
-  text.dataset.ts = state.updatedAt || "";
-  text.textContent = status ? esc(status) : fmtAgo(state.updatedAt);
+  text.dataset.ts = updatedAt || "";
+  text.textContent = status ? esc(status) : fmtAgo(updatedAt);
 }
 
 // ---- live ticking for countdowns + "ago" ----

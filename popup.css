@@ -235,3 +235,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .fade { animation: fade 0.35s var(--ease); }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* diagnostics */
+.diag summary { cursor: pointer; list-style: none; outline: none; }
+.diag summary::-webkit-details-marker { display: none; }
+.diag[open] summary { margin-bottom: 2px; }

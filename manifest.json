@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Capd",
-  "version": "1.0.0",
-  "description": "Live Claude usage: session (5h) + weekly rate-limit utilization, reset countdowns, and credit balance — read straight from claude.ai.",
-  "permissions": ["webRequest", "storage", "notifications"],
+  "version": "1.0.1",
+  "description": "Live Claude usage: session (5h) + weekly rate-limit utilization, reset countdowns, and credit balance \u2014 read straight from claude.ai.",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "notifications"
+  ],
   "host_permissions": [
     "https://claude.ai/*",
     "https://*.anthropic.com/*"
@@ -29,14 +33,22 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://claude.ai/*"],
-      "js": ["inject.js"],
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "inject.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://claude.ai/*"],
-      "js": ["bridge.js"],
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
       "run_at": "document_start",
       "world": "ISOLATED"
     }
