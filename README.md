@@ -60,6 +60,10 @@ The header parsing is **self-discovering**: it groups any `anthropic-ratelimit-*
 
 ---
 
+## License
+
+MIT — see [`LICENSE`](LICENSE). You're free to use, modify, and distribute it; just keep the copyright notice. Provided as-is, no warranty.
+
 ## Privacy
 
 Everything is stored locally in `chrome.storage.local`. No network requests are made by the extension itself. No tokens, cookies, message contents, or personal data are read or transmitted.
