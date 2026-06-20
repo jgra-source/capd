@@ -82,6 +82,7 @@ Everything is stored locally in `chrome.storage.local`. No network requests are 
 ## Troubleshooting
 
 - **Empty popup** — open claude.ai and send a message, then reopen the popup.
+- **Reading looks stale** — Capd updates when claude.ai fetches its usage endpoints, which happens on page load. If you've sent several messages and the reading hasn't changed, reload the tab to get a fresh value.
 - **No badge** — pin the extension; confirm the rings show data first.
 - **Headers not detected** — make sure host access to `claude.ai` is granted in `chrome://extensions` → Capd → Details → Site access.
 
