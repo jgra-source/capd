@@ -171,11 +171,68 @@ function ingestBody(url, body) {
   return withLock(async () => {
     if (!url || body == null) return;
     const kind = kindFromUrl(url);
-    const store = await sget(["bodies"]);
+    if (kind === "unknown") return;
+    const store = await sget(["bodies", "urls"]);
     const bodies = store.bodies || {};
+    const urls = store.urls || {};
     bodies[kind] = { body, updatedAt: Date.now() };
-    await sset({ bodies });
+    urls[kind] = url;
+    await sset({ bodies, urls });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-refresh from Claude
+// ---------------------------------------------------------------------------
+let isFetching = false;
+
+async function refreshUsageFromClaude() {
+  if (isFetching) return;
+  const store = await sget(["urls", "lastFetchTime"]);
+  const now = Date.now();
+
+  // Throttle to at most once per 60 seconds to avoid spamming
+  if (store.lastFetchTime && now - store.lastFetchTime < 60000) {
+    return;
+  }
+
+  isFetching = true;
+  await sset({ lastFetchTime: now });
+
+  try {
+    const urls = store.urls || {};
+    for (const kind in urls) {
+      const url = urls[kind];
+      if (!url) continue;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        // Extract headers
+        const rl = {};
+        res.headers.forEach((value, key) => {
+          const lk = key.toLowerCase();
+          if (lk.startsWith("anthropic-ratelimit")) {
+            rl[lk] = value;
+          }
+        });
+        if (Object.keys(rl).length) {
+          await ingestHeaders(rl);
+        }
+
+        // Extract body
+        const body = await res.json();
+        if (body) {
+          await ingestBody(url, body);
+        }
+      } catch (e) {
+        console.error(`Failed to refresh Claude usage for ${kind}:`, e);
+      }
+    }
+  } finally {
+    isFetching = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +390,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.url) ingestBody(msg.url, msg.body);
       return;
     case "getState":
+      refreshUsageFromClaude();
       getState().then(sendResponse);
       return true; // async
     case "setSettings":
@@ -360,6 +418,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// Restore badge on worker wake.
-chrome.runtime.onStartup.addListener(() => updateBadge());
-chrome.runtime.onInstalled.addListener(() => updateBadge());
+// Alarm setup
+function setupAlarm() {
+  chrome.alarms.create("refresh-usage", { periodInMinutes: 20 });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "refresh-usage") {
+    refreshUsageFromClaude();
+  }
+});
+
+// Restore badge and alarm on worker wake.
+chrome.runtime.onStartup.addListener(() => {
+  updateBadge();
+  setupAlarm();
+  refreshUsageFromClaude();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  updateBadge();
+  setupAlarm();
+  refreshUsageFromClaude();
+});

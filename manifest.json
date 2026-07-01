@@ -6,7 +6,8 @@
   "permissions": [
     "webRequest",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://claude.ai/*",
