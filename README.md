@@ -51,12 +51,12 @@ The popup updates live whenever new data arrives. If you haven't used Claude in 
 
 ## How it works
 
-1. A page-context script (`inject.js`) wraps `fetch` and `XMLHttpRequest` on claude.ai. Because those calls are same-origin, it can read the `anthropic-ratelimit-*` response headers that carry utilization, plus the JSON bodies of the account/credit endpoints.
+1. A page-context script (`inject.js`) wraps `fetch` and `XMLHttpRequest` on claude.ai. Because those calls are same-origin, it can read the JSON bodies of the usage/account endpoints, plus any `anthropic-ratelimit-*` response headers when present.
 2. `bridge.js` relays that to the service worker.
-3. The service worker (`background.js`) also reads the same headers directly via `webRequest.onHeadersReceived` (the robust primary path), parses everything into per-window utilization + reset times, drives the badge and notifications, and keeps a short history.
-4. The popup renders it.
+3. The service worker (`background.js`) derives per-window utilization from the response **bodies** (`usage-body-parser.js`) — the primary path, since the claude.ai web app no longer reliably emits rate-limit headers. When headers *are* present (read directly via `webRequest.onHeadersReceived`), they're merged in non-destructively. It drives the badge and near-cap notifications and keeps a short history.
+4. The popup renders it, with a Diagnostics panel that dumps the raw captured bodies for schema verification.
 
-The header parsing is **self-discovering**: it groups any `anthropic-ratelimit-*` header by its time window (`5h`, `7d`, etc.) and metric (`utilization`, `reset`, `status`…), so it keeps working even if Anthropic adds or renames windows.
+Both paths are **self-discovering**: the header parser groups any `anthropic-ratelimit-*` header by time window (`5h`, `7d`, …) and metric, and the body parser emits native per-window objects — so readings keep working even if Anthropic adds or renames windows.
 
 ---
 
@@ -76,7 +76,7 @@ Everything is stored locally in `chrome.storage.local`. No network requests are 
 
 ## Notes & limits
 
-- Readings refresh only when claude.ai returns fresh headers (i.e. when you use Claude). This is by design — it stays passive and free.
+- Readings refresh only when claude.ai returns fresh usage data (i.e. when you use Claude). This is by design — it stays passive and free.
 - Endpoint shapes are Anthropic's internal, undocumented surface and may change; the parser is built to degrade gracefully if they do.
 
 ## Troubleshooting
