@@ -195,10 +195,17 @@ function ingestBody(url, body) {
   return withLock(async () => {
     if (!url || body == null) return;
     const kind = kindFromUrl(url);
-    const store = await sget(["bodies", "rl", "history", "notified", "settings"]);
+    const store = await sget(["bodies", "urls", "rl", "history", "notified", "settings"]);
     const bodies = store.bodies || {};
     bodies[kind] = { body, updatedAt: Date.now() };
-    await sset({ bodies });
+
+    // Remember the usage endpoints we've seen so the periodic refresh can re-poll
+    // them even when the user isn't actively chatting. Keyed by path so distinct
+    // endpoints don't collide.
+    const urls = store.urls || {};
+    try { urls[new URL(url).pathname] = url; } catch (e) { urls[url] = url; }
+
+    await sset({ bodies, urls });
 
     // Headers are absent on the claude.ai web app, so derive utilization from
     // the bodies themselves. Store separately (rlb) so a future header response
@@ -214,6 +221,95 @@ function ingestBody(url, body) {
       await updateBadge(merged);
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-refresh from Claude (guarded)
+//
+// Passive capture only updates when the user pokes claude.ai. To keep readings
+// current we periodically re-fetch the usage endpoints we've already seen and
+// derive windows from the *fresh* bodies in isolation.
+//
+// Safety: the refresh NEVER touches the raw `bodies` store and NEVER blanks an
+// existing reading. It only overwrites a window's utilization when the fresh
+// fetch actually carries a number for it (applyFresh). A junk / empty / logged-
+// out response therefore changes nothing — it can't regress the display.
+// ---------------------------------------------------------------------------
+let isFetching = false;
+
+// Overlay fresh windows onto previous: a fresh window wins only when it carries
+// a real utilization number; otherwise the previous value is kept untouched.
+function applyFresh(prev, fresh) {
+  const out = Object.assign({}, prev || {});
+  for (const w in (fresh || {})) {
+    const cand = fresh[w];
+    if (cand && typeof cand.utilizationNum === "number") out[w] = cand;
+  }
+  return out;
+}
+
+async function refreshUsageFromClaude() {
+  if (isFetching) return;
+  const store = await sget(["urls", "lastFetchTime", "rlb"]);
+  const now = Date.now();
+
+  // Throttle to at most once per 60s so we never spam the endpoints.
+  if (store.lastFetchTime && now - store.lastFetchTime < 60000) return;
+
+  const list = Object.values(store.urls || {}).filter(Boolean);
+  if (!list.length) return;
+
+  isFetching = true;
+  await sset({ lastFetchTime: now });
+
+  try {
+    const fetched = {};
+    let i = 0;
+    for (const url of list) {
+      try {
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) continue;
+
+        // Headers occasionally ride along on a direct fetch even when the page's
+        // own XHR omits them — ingest defensively (the header path already merges
+        // non-destructively).
+        const rl = {};
+        res.headers.forEach((value, key) => {
+          const lk = key.toLowerCase();
+          if (lk.startsWith("anthropic-ratelimit")) rl[lk] = value;
+        });
+        if (Object.keys(rl).length) await ingestHeaders(rl);
+
+        const body = await res.json().catch(() => null);
+        if (body) fetched["refresh-" + (i++)] = { body, updatedAt: now };
+      } catch (e) {
+        console.error("Capd: refresh failed for", url, e);
+      }
+    }
+
+    if (!Object.keys(fetched).length) return;
+
+    // Parse fresh bodies in isolation, then overlay only real numbers.
+    const derived = self.parseUsageBodies(fetched); // { windows }
+    const hasData = Object.values(derived.windows || {}).some(
+      (w) => w && typeof w.utilizationNum === "number"
+    );
+    if (!hasData) return; // nothing usable — leave the existing reading alone
+
+    const prev = (store.rlb && store.rlb.windows) || {};
+    const nextWindows = applyFresh(prev, derived.windows);
+    await sset({ rlb: { windows: nextWindows, updatedAt: now } });
+
+    const s = await sget(["rl", "history", "notified", "settings"]);
+    const merged = mergeWindows((s.rl && s.rl.windows) || {}, nextWindows);
+    if (Object.keys(merged).length) {
+      await maybeRecordHistory(merged, s.history || []);
+      await maybeNotify(merged, s.notified || {}, s.settings || DEFAULT_SETTINGS);
+      await updateBadge(merged);
+    }
+  } finally {
+    isFetching = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +476,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.url) ingestBody(msg.url, msg.body);
       return;
     case "getState":
+      refreshUsageFromClaude();
       getState().then(sendResponse);
       return true; // async
     case "setSettings":
@@ -407,6 +504,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// Restore badge on worker wake.
-chrome.runtime.onStartup.addListener(() => updateBadge());
-chrome.runtime.onInstalled.addListener(() => updateBadge());
+// ---------------------------------------------------------------------------
+// Periodic refresh alarm
+// ---------------------------------------------------------------------------
+function setupAlarm() {
+  chrome.alarms.create("refresh-usage", { periodInMinutes: 20 });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "refresh-usage") refreshUsageFromClaude();
+});
+
+// Restore badge + alarm and pull a fresh reading on worker wake.
+chrome.runtime.onStartup.addListener(() => {
+  updateBadge();
+  setupAlarm();
+  refreshUsageFromClaude();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  updateBadge();
+  setupAlarm();
+  refreshUsageFromClaude();
+});

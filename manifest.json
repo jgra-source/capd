@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Capd",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Live Claude usage: session (5h) + weekly rate-limit utilization, reset countdowns, and credit balance \u2014 read straight from claude.ai.",
   "permissions": [
     "webRequest",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://claude.ai/*",

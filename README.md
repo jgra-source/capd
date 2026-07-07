@@ -17,7 +17,7 @@ No accounts, no API keys, nothing leaves your machine.
 - **Near-cap notifications** — a one-time ping when you cross your threshold (default 80%).
 - **Session history** — a small sparkline of recent utilization.
 
-It is **passive**: it reads the usage figures that claude.ai already returns on your normal requests. It never sends extra API calls and never reads your cookies or auth tokens.
+It reads the usage figures that claude.ai already returns on your normal requests, and — while you have a claude.ai session — periodically re-checks those same usage endpoints in the background so the reading stays current even when you're not actively chatting. It never reads your cookies, auth tokens, or message content, and nothing ever leaves your machine.
 
 ---
 
@@ -66,17 +66,18 @@ MIT — see [`LICENSE`](LICENSE). You're free to use, modify, and distribute it;
 
 ## Privacy
 
-Everything is stored locally in `chrome.storage.local`. No network requests are made by the extension itself. No tokens, cookies, message contents, or personal data are read or transmitted.
+Everything is stored locally in `chrome.storage.local`. The only network requests the extension makes are the background re-checks of claude.ai's own usage endpoints (same data your browser already fetches) — nothing is sent anywhere else. No tokens, cookies, message contents, or personal data are read or transmitted.
 
 ## Permissions
 
 - `webRequest` + host access to `claude.ai` / `*.anthropic.com` — to read rate-limit response headers.
 - `storage` — to keep your readings, history, and settings.
 - `notifications` — for near-cap alerts.
+- `alarms` — to schedule the periodic background refresh.
 
 ## Notes & limits
 
-- Readings refresh only when claude.ai returns fresh usage data (i.e. when you use Claude). This is by design — it stays passive and free.
+- Readings refresh when claude.ai returns fresh usage data (as you use Claude) and via a guarded background re-check (~20 min) that re-polls the endpoints already seen. The background refresh only ever *updates* a reading with a real number — it can never blank or corrupt what's shown — so if you're logged out or the endpoints don't respond usefully, the last good reading simply stays.
 - Endpoint shapes are Anthropic's internal, undocumented surface and may change; the parser is built to degrade gracefully if they do.
 
 ## Troubleshooting
@@ -88,6 +89,7 @@ Everything is stored locally in `chrome.storage.local`. No network requests are 
 
 ## Changelog
 
+- **v1.0.4** — Added a guarded background auto-refresh (`chrome.alarms`, ~20 min + on popup open) that re-polls the seen usage endpoints so readings stay current without re-sending a message. It parses fresh responses in isolation and only overlays real numbers, so it can never blank or corrupt an existing reading.
 - **v1.0.3** — Broadened `BODY_RE` in `inject.js` to match Claude.ai's updated API URL structure (no longer requires the strict `/api/v1/{account_id}/` prefix), restoring session readings after the endpoint paths changed.
 - **v1.0.2** — Confirmed claude.ai's web app emits no `anthropic-ratelimit-*` headers; pivoted utilization to a self-discovering `usage`-body parser (`usage-body-parser.js`) that emits native window objects, merged non-destructively with any header data. Added a Diagnostics raw-body dump with one-tap copy for schema verification.
 - **v1.0.1** — Show partial data (balance without headers); add Diagnostics panel; fix stale-tab empty state.
