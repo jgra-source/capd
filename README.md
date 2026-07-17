@@ -89,6 +89,7 @@ Everything is stored locally in `chrome.storage.local`. The only network request
 
 ## Changelog
 
+- **v1.0.5** — Fixed the gauge intermittently dropping to `—`: `kindFromUrl()` in `background.js` still keyed on the old `/api/v1/{account_id}/` prefix after `BODY_RE` was broadened in v1.0.3, so every captured body was bucketed as `unknown` and overwrote the previous one in storage. A non-usage response landing after the usage response wiped the reading. `kindFromUrl()` now matches the same endpoint tokens `BODY_RE` gates on, giving each body a distinct key.
 - **v1.0.4** — Added a guarded background auto-refresh (`chrome.alarms`, ~20 min + on popup open) that re-polls the seen usage endpoints so readings stay current without re-sending a message. It parses fresh responses in isolation and only overlays real numbers, so it can never blank or corrupt an existing reading.
 - **v1.0.3** — Broadened `BODY_RE` in `inject.js` to match Claude.ai's updated API URL structure (no longer requires the strict `/api/v1/{account_id}/` prefix), restoring session readings after the endpoint paths changed.
 - **v1.0.2** — Confirmed claude.ai's web app emits no `anthropic-ratelimit-*` headers; pivoted utilization to a self-discovering `usage`-body parser (`usage-body-parser.js`) that emits native window objects, merged non-destructively with any header data. Added a Diagnostics raw-body dump with one-tap copy for schema verification.

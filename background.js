@@ -186,9 +186,24 @@ function ingestHeaders(rlMap) {
 // ---------------------------------------------------------------------------
 // Ingest: bodies (credit / balance / subscription surface)
 // ---------------------------------------------------------------------------
+// Bucket a captured body by endpoint name. Must stay in sync with inject.js's
+// BODY_RE: that regex was broadened past the old /api/v1/{account_id}/ prefix,
+// so keying on that prefix here bucketed every modern body as "unknown" and made
+// them clobber each other in storage. Match the same endpoint tokens BODY_RE
+// gates on (longest first so subscription_details isn't shadowed), then fall
+// back to the last path segment.
+const KIND_RE = /(paused_subscription_details|subscription_details|overage_spend_limit|overage_credit_grant|consumer_pricing|run-budget|credits|balance|usage)\b/i;
 function kindFromUrl(url) {
-  const m = url.match(/\/api\/v1\/[^/]+\/([a-z_]+(?:-[a-z]+)*)/i);
-  return m ? m[1].toLowerCase() : "unknown";
+  try {
+    const path = new URL(url).pathname;
+    const m = path.match(KIND_RE);
+    if (m) return m[1].toLowerCase();
+    const seg = path.split("/").filter(Boolean).pop();
+    return seg ? seg.toLowerCase() : "unknown";
+  } catch (e) {
+    const m = String(url).match(KIND_RE);
+    return m ? m[1].toLowerCase() : "unknown";
+  }
 }
 
 function ingestBody(url, body) {
