@@ -31,9 +31,12 @@
   const WINDOW_LABELS = { "5h": "Session", "7d": "Weekly" };
 
   // Map any window-ish token onto a canonical Capd token that pickWindow knows.
+  // NOTE: claude.ai spells these out in words — `five_hour` / `seven_day` — so the
+  // word forms must be matched, not just the digit forms. Missing `seven[_-]?day`
+  // is why the Weekly window silently never resolved.
   const WINDOW_PATTERNS = [
     { token: "5h", re: /(5\s*h|five[_-]?hour|session|short[_-]?term|rolling|current)/i },
-    { token: "7d", re: /(7\s*d|7[_-]?day|week|weekly|long[_-]?term)/i },
+    { token: "7d", re: /(7\s*d|7[_-]?day|seven[_-]?day|week|weekly|long[_-]?term)/i },
   ];
 
   const METRIC = {
@@ -117,7 +120,11 @@
         const w = windowOf(path);
         const m = metricOf(path);
         if (!w || !m) continue;
-        if (buckets[w][m] === undefined) buckets[w][m] = value; // first wins
+        // First NON-NULL wins. claude.ai returns a lot of null placeholders
+        // (five_hour.limit_dollars, extra_usage.*); letting a null claim the slot
+        // locked out the real value that arrived later in the same body — or from
+        // a body captured afterwards — and produced a window with no utilization.
+        if (value != null && buckets[w][m] === undefined) buckets[w][m] = value;
       }
     }
 

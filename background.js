@@ -492,14 +492,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     case "getState":
       refreshUsageFromClaude();
+      // Re-sync the badge from stored windows. The badge is otherwise only
+      // written on ingest, so a browser restart (badge text is per-session) or
+      // any earlier clear would leave it blank while the popup shows readings.
+      updateBadge();
       getState().then(sendResponse);
       return true; // async
     case "setSettings":
       withLock(async () => {
-        const store = await sget(["settings", "rl"]);
+        const store = await sget(["settings"]);
         const next = Object.assign({}, DEFAULT_SETTINGS, store.settings || {}, msg.settings || {});
         await sset({ settings: next });
-        await updateBadge((store.rl && store.rl.windows) || {});
+        // No argument: updateBadge() re-reads and merges BOTH rl and rlb. Passing
+        // only rl.windows blanked the badge on every settings change, because
+        // claude.ai emits no ratelimit headers so rl is empty and all real
+        // readings live in rlb.
+        await updateBadge();
         sendResponse({ ok: true, settings: next });
       });
       return true;
