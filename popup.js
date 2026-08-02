@@ -203,7 +203,7 @@ function scalarRows(body, max = 8) {
 function balanceHTML(bodies) {
   // `usage` and `overage_spend_limit` are deliberately absent: their top-level
   // scalars are org UUIDs, internal flags and ambiguous counts that no one can
-  // act on. Diagnostics still dumps every captured body in full.
+  // act on.
   const order = ["balance", "credits", "subscription_details"];
   let out = "";
   for (const kind of order) {
@@ -275,55 +275,6 @@ function waitingHeadersHTML() {
     </div>`;
 }
 
-function rawBodiesHTML(bodies) {
-  const kinds = Object.keys(bodies || {});
-  if (!kinds.length) return "";
-  let out = "";
-  for (const kind of kinds) {
-    const entry = bodies[kind];
-    if (!entry || entry.body == null) continue;
-    let pretty;
-    try {
-      const obj = typeof entry.body === "string" ? JSON.parse(entry.body) : entry.body;
-      pretty = JSON.stringify(obj, null, 2);
-    } catch (e) {
-      pretty = String(entry.body);
-    }
-    out += `
-      <div class="rawbody">
-        <div class="rawbody-head">
-          <span class="rawbody-kind">${esc(kind)}</span>
-          <button class="copy-btn" data-copy="${esc(kind)}"><span data-label>Copy</span></button>
-        </div>
-        <pre class="rawbody-pre" data-kind="${esc(kind)}">${esc(pretty)}</pre>
-      </div>`;
-  }
-  return out;
-}
-
-function diagnosticsHTML(state) {
-  const raw = (state.rl && state.rl.raw) || {};
-  const headerKeys = Object.keys(raw);
-  const bodyKinds = Object.keys(state.bodies || {});
-  const hdr = headerKeys.length
-    ? headerKeys.map((k) =>
-        `<div class="kv"><span class="k">${esc(k.replace(/^anthropic-ratelimit-?/, ""))}</span><span class="v">${esc(raw[k])}</span></div>`
-      ).join("")
-    : `<div class="kv"><span class="k">ratelimit headers</span><span class="v">0 seen</span></div>`;
-  const body = `<div class="kv"><span class="k">account endpoints</span><span class="v">${bodyKinds.length ? esc(bodyKinds.join(", ")) : "0 seen"}</span></div>`;
-  const bodyUtil = (() => {
-    const w = state.windows || {};
-    const src = Object.values(w).filter((x) => x && x.source === "body").map((x) => x.token);
-    return `<div class="kv"><span class="k">body-derived windows</span><span class="v">${src.length ? esc(src.join(", ")) : "none"}</span></div>`;
-  })();
-  return `
-    <details class="diag card">
-      <summary class="card-title">Diagnostics</summary>
-      <div style="margin-top:8px">${hdr}${body}${bodyUtil}</div>
-      ${rawBodiesHTML(state.bodies)}
-    </details>`;
-}
-
 function renderMain(state) {
   const main = $("#main");
   const windows = state.windows || {};
@@ -343,7 +294,6 @@ function renderMain(state) {
     const details = extraWindowsHTML(state) + balanceHTML(bodies) + sparkHTML(state.history);
     if (details) html += moreHTML(details);
   }
-  html += diagnosticsHTML(state);
   main.innerHTML = html;
   const more = $("#more");
   if (more) more.addEventListener("toggle", () => {
@@ -448,38 +398,10 @@ async function refresh() {
   updateStatus(currentState);
 }
 
-// ---- diagnostics: copy raw bodies (delegated, survives re-renders) ----
-function initCopyDelegation() {
-  const main = $("#main");
-  if (!main) return;
-  main.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".copy-btn");
-    if (!btn) return;
-    const kind = btn.getAttribute("data-copy");
-    const pre = main.querySelector(`.rawbody-pre[data-kind="${CSS.escape(kind)}"]`);
-    if (!pre) return;
-    const text = pre.textContent;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (err) {
-      const ta = document.createElement("textarea");
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch (e2) {}
-      ta.remove();
-    }
-    const label = btn.querySelector("[data-label]") || btn;
-    const original = label.textContent;
-    label.textContent = "Copied";
-    btn.classList.add("is-copied");
-    setTimeout(() => { label.textContent = original; btn.classList.remove("is-copied"); }, 1400);
-  });
-}
-
 async function boot() {
   currentState = await send("getState");
   currentState = currentState || { settings: { threshold: 80, notifications: true, badgeMetric: "max" }, bodies: {}, windows: {}, history: [] };
   initSettings(currentState.settings);
-  initCopyDelegation();
   renderMain(currentState);
   updateStatus(currentState);
   setInterval(tick, 1000);

@@ -63,6 +63,15 @@ popup.js
 `WEEKLY_PREF = ["7d", "weekly"]` — tried in order to find the weekly window.  
 The body parser only emits `5h` and `7d` tokens; the header parser can produce any window token present in the headers.
 
-## Diagnostics
+## Debugging when readings stop
 
-The popup's collapsed **Diagnostics** section (`<details>`) shows raw header keys, which account endpoints were captured, which body-derived windows were resolved, and the full raw JSON of each captured body with a copy button. This is the primary tool for debugging when readings stop.
+The popup had a **Diagnostics** panel dumping raw captured bodies; it was removed in v1.0.9 because it exposed account internals in the normal UI. The data it showed still exists — it just has to be read from storage directly:
+
+```js
+// paste into the service worker console: chrome://extensions -> Capd -> "service worker"
+chrome.storage.local.get(["rl", "rlb", "bodies", "urls"]).then(console.log)
+```
+
+`bodies` holds the raw JSON of each captured endpoint keyed by kind, `rl`/`rlb` the parsed header- and body-derived windows, `urls` the endpoints seen so far. Check `bodies` first: if it's empty, capture is broken (suspect `BODY_RE` in `inject.js`); if it's populated but `rlb.windows` is empty, parsing is broken (suspect `usage-body-parser.js`).
+
+Outside the browser, the same data sits in Chrome's profile under `Local Extension Settings/<extension-id>/`. Read the uncompressed `.log` file there — the `.ldb` files are snappy-compressed, and dumping them as text yields field names and numbers that were never in the data.

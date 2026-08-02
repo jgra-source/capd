@@ -260,33 +260,3 @@ input[type="range"]::-webkit-slider-thumb {
 .more-toggle .chev { width: 14px; height: 14px; color: var(--muted); transition: transform 0.25s var(--ease); }
 .more[open] > .more-toggle .chev { transform: rotate(180deg); }
 
-/* diagnostics */
-.diag summary { cursor: pointer; list-style: none; outline: none; }
-.diag summary::-webkit-details-marker { display: none; }
-.diag[open] summary { margin-bottom: 2px; }
-
-/* diagnostics — raw body dump (v1.0.2) */
-.rawbody { margin-top: 10px; }
-.rawbody-head {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;
-}
-.rawbody-kind {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--muted);
-}
-.copy-btn {
-  font-family: var(--mono); font-size: 10.5px; cursor: pointer;
-  padding: 3px 9px; border-radius: 7px; color: var(--accent);
-  background: transparent; border: 1px solid var(--border);
-  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
-}
-.copy-btn:hover { background: var(--accent-soft); }
-.copy-btn.is-copied {
-  color: #1a0d02; background: var(--accent); border-color: var(--accent);
-}
-.rawbody-pre {
-  font-family: var(--mono); font-size: 11px; line-height: 1.5; margin: 0;
-  max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-  padding: 9px 10px; border-radius: 9px;
-  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
-}

@@ -86,7 +86,7 @@ The popup updates live whenever new data arrives. If you haven't used Claude in 
 1. A page-context script (`inject.js`) wraps `fetch` and `XMLHttpRequest` on claude.ai. Because those calls are same-origin, it can read the JSON bodies of the usage/account endpoints, plus any `anthropic-ratelimit-*` response headers when present.
 2. `bridge.js` relays that to the service worker.
 3. The service worker (`background.js`) derives per-window utilization from the response **bodies** (`usage-body-parser.js`) — the primary path, since the claude.ai web app no longer reliably emits rate-limit headers. When headers *are* present (read directly via `webRequest.onHeadersReceived`), they're merged in non-destructively. It drives the badge and near-cap notifications and keeps a short history.
-4. The popup renders it, with a Diagnostics panel that dumps the raw captured bodies for schema verification.
+4. The popup renders it.
 
 Both paths are **self-discovering**: the header parser groups any `anthropic-ratelimit-*` header by time window (`5h`, `7d`, …) and metric, and the body parser emits native per-window objects — so readings keep working even if Anthropic adds or renames windows.
 
@@ -121,9 +121,10 @@ Everything is stored locally in `chrome.storage.local`. The only network request
 
 ## Changelog
 
+- **v1.0.9** — Removed the **Diagnostics** panel, along with the raw-body dump and its copy buttons. It put account internals — organization UUID, billing endpoint payloads, subscription fields — one click away in the everyday UI, which is more exposure than a usage meter needs. Nothing about capture or parsing changed; the same data is still in `chrome.storage.local` and readable from the service worker console (see CLAUDE.md → *Debugging when readings stop*).
 - **v1.0.8** — Two fixes.
   - **The Settings panel never collapsed.** `popup.html` ships it with the `hidden` attribute and the toggle sets `body.hidden`, but `.settings-body { display: flex }` is an author rule and therefore overrides the browser's built-in `[hidden] { display: none }` — so the panel was stuck open from first paint, and the toggle appeared dead. Added `.settings-body[hidden] { display: none }`.
-  - **Dropped the `overage_spend_limit` and `usage` cards.** They printed their endpoints' top-level scalars, which are organization UUIDs, internal flags, `member_dashboard_available`, and a `monthly_credit_limit` matching nothing the account displays — nothing a user can act on. Both raw bodies are still dumped in full under Diagnostics.
+  - **Dropped the `overage_spend_limit` and `usage` cards.** They printed their endpoints' top-level scalars, which are organization UUIDs, internal flags, `member_dashboard_available`, and a `monthly_credit_limit` matching nothing the account displays — nothing a user can act on.
 - **v1.0.7** — Account cards are now readable rather than raw.
   - **Money is formatted as currency, but only where the unit is provable.** Claude's billing API mixes scales inside a single body: `credits` returns `amount: 6983` (minor units — $69.83, corroborated by the sibling `promo_tranches[].remaining_amount_minor_units: 6982`) directly alongside `balance_credits: 69`, which is *already* in whole units. So a money-sounding name proves nothing about scale, and dividing on name alone rendered $69 as $0.69. Conversion is now limited to keys that state their own unit (`*_cents`, `*_minor`, `*_minor_units`), plus the bare `amount` field when a sibling `currency` confirms the body is describing money. Ambiguous fields (`balance_credits`, `monthly_credit_limit`, `used_credits`) are printed exactly as sent.
   - **Dates render as dates.** Timestamps become local date-times; date-only strings like `next_charge_date: "2026-08-09"` are formatted in UTC with no clock time, so they can't drift a day across the date line or imply a precision the API never sent. Bare epoch numbers only convert when the key itself reads as a time (`_at`, `expires`, `reset`, …), so counts are never mistaken for dates.
