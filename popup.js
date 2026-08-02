@@ -156,8 +156,7 @@ const MINOR_UNIT_KEY = /_cents$|_minor$|minor_units?$/i;
 // Sharing a body is proximity, not proof; only the value's own declared unit is.
 const BARE_AMOUNT_KEY = /^amount$/i;
 
-function fmtMoney(minorUnits, currency) {
-  const major = minorUnits / 100;
+function formatCurrency(major, currency) {
   if (currency) {
     try {
       return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(major);
@@ -165,6 +164,19 @@ function fmtMoney(minorUnits, currency) {
   }
   return major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     + (currency ? " " + currency : "");
+}
+
+function fmtMoney(minorUnits, currency) {
+  return formatCurrency(minorUnits / 100, currency);
+}
+
+// The usage body expresses money as { amount_minor, currency, exponent } — the
+// one place Claude states its own scale, so this converts by the exponent it
+// supplies instead of assuming cents.
+function fmtAmount(a) {
+  if (!a || typeof a.amount_minor !== "number" || !isFinite(a.amount_minor)) return null;
+  const exp = typeof a.exponent === "number" ? a.exponent : 2;
+  return formatCurrency(a.amount_minor / Math.pow(10, exp), a.currency || null);
 }
 
 function moneyDisplay(key, val, currency) {
@@ -197,8 +209,67 @@ function scalarRows(body, max = 8) {
   return rows.join("");
 }
 
+// Spend against the usage-credit limit, built from the usage body's `spend`
+// block. Replaces the raw `overage_spend_limit` card, which listed org UUIDs, a
+// disabled flag and a `monthly_credit_limit` that matches nothing the account
+// actually shows. Every figure here is an { amount_minor, currency, exponent }
+// object, so the scale is read from the data rather than guessed.
+function spendHTML(bodies) {
+  const entry = bodies && bodies.usage;
+  let body = entry && entry.body;
+  if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { return ""; } }
+  const spend = body && body.spend;
+  if (!spend) return "";
+
+  const usedTxt = fmtAmount(spend.used);
+  const limitTxt = fmtAmount(spend.limit);
+  if (!usedTxt && !limitTxt) return "";
+
+  // Prefer the API's own percentage; fall back to used/limit only if absent.
+  const eu = (body.extra_usage && typeof body.extra_usage.utilization === "number")
+    ? body.extra_usage.utilization : null;
+  let pct = eu != null ? eu : (typeof spend.percent === "number" ? spend.percent : null);
+  if (pct == null && spend.used && spend.limit && spend.limit.amount_minor > 0) {
+    pct = (spend.used.amount_minor / spend.limit.amount_minor) * 100;
+  }
+
+  let remainTxt = null;
+  if (spend.used && spend.limit &&
+      typeof spend.used.amount_minor === "number" &&
+      typeof spend.limit.amount_minor === "number") {
+    remainTxt = fmtAmount({
+      amount_minor: Math.max(0, spend.limit.amount_minor - spend.used.amount_minor),
+      currency: spend.limit.currency || spend.used.currency,
+      exponent: spend.limit.exponent,
+    });
+  }
+
+  const bar = pct == null ? "" : `
+    <span class="spend-bar"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%;background:${meterColor(pct)}"></i></span>`;
+  const rows = [
+    remainTxt ? `<div class="kv"><span class="k">Remaining</span><span class="v">${esc(remainTxt)}</span></div>` : "",
+    spend.enabled === false ? `<div class="kv"><span class="k">Status</span><span class="v">Off</span></div>` : "",
+  ].join("");
+
+  return `
+    <div class="card">
+      <div class="card-title">Spend limit</div>
+      <div class="spend-top">
+        <span class="spend-amt">${esc(usedTxt || "—")}</span>
+        ${limitTxt ? `<span class="spend-of">of ${esc(limitTxt)}</span>` : ""}
+        ${pct == null ? "" : `<span class="spend-pct">${Math.round(pct)}%</span>`}
+      </div>
+      ${bar}
+      ${rows}
+    </div>`;
+}
+
 function balanceHTML(bodies) {
-  const order = ["balance", "credits", "usage", "subscription_details", "overage_spend_limit"];
+  // `usage` and `overage_spend_limit` are deliberately absent: their top-level
+  // scalars are org UUIDs, internal flags and ambiguous counts. What's useful in
+  // the usage body is rendered by spendHTML() instead, and Diagnostics still
+  // dumps every captured body in full.
+  const order = ["balance", "credits", "subscription_details"];
   let out = "";
   for (const kind of order) {
     const entry = bodies[kind];
@@ -334,7 +405,7 @@ function renderMain(state) {
     } else {
       html += waitingHeadersHTML();
     }
-    const details = extraWindowsHTML(state) + balanceHTML(bodies) + sparkHTML(state.history);
+    const details = extraWindowsHTML(state) + spendHTML(bodies) + balanceHTML(bodies) + sparkHTML(state.history);
     if (details) html += moreHTML(details);
   }
   html += diagnosticsHTML(state);
