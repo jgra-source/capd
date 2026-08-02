@@ -141,22 +141,20 @@ function extraWindowsHTML(state) {
 // "credits" therefore proves nothing, and guessing turns $69 into $0.69.
 const MINOR_UNIT_KEY = /_cents$|_minor$|minor_units?$/i;
 
-// `amount` is one exception: it never names its unit, but the credits body
+// `amount` is the sole exception: it never names its unit, but the credits body
 // pins it down — 6983 sits beside a promo tranche recording
 // `remaining_amount_minor_units: 6982`. Only trusted when a sibling `currency`
 // field confirms the body is talking about money at all.
+//
+// Nothing else earns an exception. `monthly_credit_limit` was briefly added on
+// the reasoning that it shares a body with a field proven to be minor units —
+// which rendered 5000 as $50.00, while the account's real monthly spend limit
+// is $100.00 (asserted independently by `spend.limit.amount_minor`,
+// `extra_usage.monthly_limit`, `overage_credit_grant.amount_minor_units` and
+// the promo tranche's `granted_amount_minor_units`, all 10000). That field is a
+// disabled organization-scoped setting describing something else entirely.
+// Sharing a body is proximity, not proof; only the value's own declared unit is.
 const BARE_AMOUNT_KEY = /^amount$/i;
-
-// Named exceptions, each confirmed against a value that *does* declare its unit
-// — never added on the strength of the name alone:
-//   used_credits         — the usage body reports 380, byte-identical to
-//                          `spend.used.amount_minor: 380` tagged {USD, exponent 2},
-//                          and 380/10000 equals the reported utilization of 3.8%.
-//   monthly_credit_limit — shares the overage_spend_limit body with used_credits,
-//                          so it carries the same scale: 5000 -> $50.00.
-// `balance_credits` is deliberately absent: it reads 69 against an `amount` of
-// 6983, i.e. already whole dollars. Converting it produced $0.69.
-const VERIFIED_MINOR_KEYS = new Set(["used_credits", "monthly_credit_limit"]);
 
 function fmtMoney(minorUnits, currency) {
   const major = minorUnits / 100;
@@ -171,8 +169,7 @@ function fmtMoney(minorUnits, currency) {
 
 function moneyDisplay(key, val, currency) {
   if (typeof val !== "number" || !isFinite(val)) return null;
-  const isMinor = MINOR_UNIT_KEY.test(key)
-    || (currency && (BARE_AMOUNT_KEY.test(key) || VERIFIED_MINOR_KEYS.has(key.toLowerCase())));
+  const isMinor = MINOR_UNIT_KEY.test(key) || (currency && BARE_AMOUNT_KEY.test(key));
   if (!isMinor) return null;
   return fmtMoney(val, currency);
 }
