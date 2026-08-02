@@ -135,23 +135,26 @@ function extraWindowsHTML(state) {
 }
 
 // Money conversion is deliberately restricted to fields that state their own
-// unit in the name, because Claude's billing API mixes scales freely: the
-// credits body reports `amount: 6983` (minor units, $69.83) right next to
-// `balance_credits: 69` (already whole units). A name like "balance" or
-// "credits" therefore proves nothing, and guessing turns $69 into $0.69.
+// unit in the name, because Claude's billing API mixes scales within a single
+// body: `credits` reports `amount` in minor units right next to
+// `balance_credits`, which is already in whole units and reads as roughly
+// one-hundredth of it. A name like "balance" or "credits" therefore proves
+// nothing about scale, and converting on the name alone divides an already-
+// whole value by 100 — turning $69 into $0.69.
 const MINOR_UNIT_KEY = /_cents$|_minor$|minor_units?$/i;
 
 // `amount` is the sole exception: it never names its unit, but the credits body
-// pins it down — 6983 sits beside a promo tranche recording
-// `remaining_amount_minor_units: 6982`. Only trusted when a sibling `currency`
-// field confirms the body is talking about money at all.
+// pins it down — it tracks the promo tranche's `remaining_amount_minor_units`
+// to within a unit. Only trusted when a sibling `currency` field confirms the
+// body is talking about money at all.
 //
 // Nothing else earns an exception. `monthly_credit_limit` was briefly added on
-// the reasoning that it shares a body with a field proven to be minor units —
-// which rendered 5000 as $50.00, while the account's real monthly spend limit
-// is $100.00 (asserted independently by `spend.limit.amount_minor`,
-// `extra_usage.monthly_limit`, `overage_credit_grant.amount_minor_units` and
-// the promo tranche's `granted_amount_minor_units`, all 10000). That field is a
+// the reasoning that it shares a body with a field proven to be minor units.
+// That produced a plausible figure which matched no limit the account actually
+// displays — the real one is asserted independently by
+// `spend.limit.amount_minor`, `extra_usage.monthly_limit`,
+// `overage_credit_grant.amount_minor_units` and the promo tranche's
+// `granted_amount_minor_units`, which all agree. `monthly_credit_limit` is a
 // disabled organization-scoped setting describing something else entirely.
 // Sharing a body is proximity, not proof; only the value's own declared unit is.
 const BARE_AMOUNT_KEY = /^amount$/i;
