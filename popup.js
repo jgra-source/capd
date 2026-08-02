@@ -55,6 +55,33 @@ function prettyKey(k) {
   return k.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// A date-only value ("2026-08-09") is rendered in UTC and without a clock time.
+// Parsing it as local would shift it a day either side of the date line, and
+// tacking on "12:00 AM" invents precision the API never sent.
+function fmtDate(ms, dateOnly) {
+  const opts = dateOnly
+    ? { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }
+    : { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" };
+  return new Date(ms).toLocaleString(undefined, opts);
+}
+
+// Returns a readable date string when the value reads as a date, else null.
+// ISO-like strings always qualify; bare epoch numbers only when the key sounds
+// like a timestamp, so counts/amounts are never mistaken for dates.
+const DATEISH_KEY = /(_at\b|date|time|expir|reset|start|end|until|renew)/i;
+function dateDisplay(key, val) {
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}([T ]|$)/.test(val.trim())) {
+    const s = val.trim();
+    const t = Date.parse(s);
+    if (!isNaN(t)) return fmtDate(t, /^\d{4}-\d{2}-\d{2}$/.test(s));
+  }
+  if (typeof val === "number" && DATEISH_KEY.test(key)) {
+    if (val > 1e12 && val < 4e12) return fmtDate(val);       // ms epoch
+    if (val > 1e9 && val < 4e9) return fmtDate(val * 1000);  // s epoch
+  }
+  return null;
+}
+
 function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
@@ -107,15 +134,55 @@ function extraWindowsHTML(state) {
   return `<div class="card"><div class="card-title">Other limits</div>${rows}</div>`;
 }
 
+// Money conversion is deliberately restricted to fields that state their own
+// unit in the name, because Claude's billing API mixes scales freely: the
+// credits body reports `amount: 6983` (minor units, $69.83) right next to
+// `balance_credits: 69` (already whole units). A name like "balance" or
+// "credits" therefore proves nothing, and guessing turns $69 into $0.69.
+const MINOR_UNIT_KEY = /_cents$|_minor$|minor_units?$/i;
+
+// `amount` is the sole exception: it never names its unit, but the credits body
+// pins it down — 6983 sits beside a promo tranche recording
+// `remaining_amount_minor_units: 6982`. Only trusted when a sibling `currency`
+// field confirms the body is talking about money at all.
+const BARE_AMOUNT_KEY = /^amount$/i;
+
+function fmtMoney(minorUnits, currency) {
+  const major = minorUnits / 100;
+  if (currency) {
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(major);
+    } catch (e) { /* unknown currency code — fall through */ }
+  }
+  return major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    + (currency ? " " + currency : "");
+}
+
+function moneyDisplay(key, val, currency) {
+  if (typeof val !== "number" || !isFinite(val)) return null;
+  const isMinor = MINOR_UNIT_KEY.test(key) || (currency && BARE_AMOUNT_KEY.test(key));
+  if (!isMinor) return null;
+  return fmtMoney(val, currency);
+}
+
 function scalarRows(body, max = 8) {
   const rows = [];
+  const currency = typeof body.currency === "string" ? body.currency.toUpperCase() : null;
   for (const k in body) {
     if (rows.length >= max) break;
     const val = body[k];
     const t = typeof val;
     if (t === "string" || t === "number" || t === "boolean") {
-      let display = t === "boolean" ? (val ? "Yes" : "No") : t === "number" ? fmtNumber(val) : esc(val);
-      rows.push(`<div class="kv"><span class="k">${esc(prettyKey(k))}</span><span class="v">${display}</span></div>`);
+      const asDate = dateDisplay(k, val);
+      const asMoney = asDate ? null : moneyDisplay(k, val, currency);
+      let display = asDate ? esc(asDate)
+        : asMoney ? esc(asMoney)
+        : t === "boolean" ? (val ? "Yes" : "No")
+        : t === "number" ? fmtNumber(val) : esc(val);
+      // Keep the untouched API value one hover away, so a reformatted row can
+      // always be checked against what Claude actually sent.
+      const title = (asDate || asMoney) ? ` title="raw: ${esc(val)}"` : "";
+      rows.push(`<div class="kv"><span class="k">${esc(prettyKey(k))}</span><span class="v"${title}>${display}</span></div>`);
     }
   }
   return rows.join("");
@@ -152,6 +219,22 @@ function sparkHTML(history) {
         <path class="line" d="${d.trim()}"/>
       </svg>
     </div>`;
+}
+
+// Collapsible wrapper for everything below the two rings (other limits,
+// account cards, history). Open/closed choice is remembered across popups.
+const MORE_KEY = "capd.moreOpen";
+function moreHTML(inner) {
+  const open = localStorage.getItem(MORE_KEY) !== "0";
+  return `
+    <details class="more" id="more"${open ? " open" : ""}>
+      <summary class="more-toggle">
+        <span>More details</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      ${inner}
+    </details>`;
 }
 
 // ---- main render ----
@@ -239,15 +322,18 @@ function renderMain(state) {
   } else {
     if (hasHeaders) {
       html += `<div class="gauges">${gaugeHTML(state.session, "Session")}${gaugeHTML(state.weekly, "Weekly")}</div>`;
-      html += extraWindowsHTML(state);
     } else {
       html += waitingHeadersHTML();
     }
-    html += balanceHTML(bodies);
-    html += sparkHTML(state.history);
+    const details = extraWindowsHTML(state) + balanceHTML(bodies) + sparkHTML(state.history);
+    if (details) html += moreHTML(details);
   }
   html += diagnosticsHTML(state);
   main.innerHTML = html;
+  const more = $("#more");
+  if (more) more.addEventListener("toggle", () => {
+    localStorage.setItem(MORE_KEY, more.open ? "1" : "0");
+  });
   tick(); // fill countdowns immediately
 }
 

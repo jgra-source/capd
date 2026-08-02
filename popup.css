@@ -236,6 +236,19 @@ input[type="range"]::-webkit-slider-thumb {
 .fade { animation: fade 0.35s var(--ease); }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
+/* collapsible "More details" section */
+.more { margin-top: 12px; }
+.more > .more-toggle {
+  list-style: none; cursor: pointer; outline: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 2px 0;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--faint);
+}
+.more > .more-toggle::-webkit-details-marker { display: none; }
+.more-toggle .chev { width: 14px; height: 14px; color: var(--muted); transition: transform 0.25s var(--ease); }
+.more[open] > .more-toggle .chev { transform: rotate(180deg); }
+
 /* diagnostics */
 .diag summary { cursor: pointer; list-style: none; outline: none; }
 .diag summary::-webkit-details-marker { display: none; }
