@@ -217,6 +217,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .settings-actions { display: flex; gap: 8px; }
+.settings-actions + .settings-actions { margin-top: 8px; }
 .btn {
   flex: 1;
   display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -229,6 +230,13 @@ input[type="range"]::-webkit-slider-thumb {
 .btn-ghost { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
 .btn-ghost:hover { color: var(--text); filter: none; }
 .btn .ico { width: 14px; height: 14px; }
+
+/* destructive action — muted until hovered, loud once armed */
+.btn-danger:hover { color: var(--red); border-color: var(--red); filter: none; }
+.btn-danger.is-armed {
+  background: var(--red); border-color: var(--red); color: #fff;
+}
+.btn-danger.is-armed:hover { color: #fff; }
 
 .ico { width: 14px; height: 14px; }
 .mono { font-family: var(--mono); }

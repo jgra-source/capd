@@ -519,7 +519,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     case "clearAll":
       withLock(async () => {
+        // Wipes captured data (readings, raw bodies, history, seen endpoints,
+        // notification bookkeeping) but deliberately restores `settings` — this
+        // is a data reset, not a factory reset, so it shouldn't silently undo
+        // the user's threshold, notification toggle, and badge choice.
+        const keep = await sget(["settings"]);
         await chrome.storage.local.clear();
+        if (keep.settings) await sset({ settings: keep.settings });
         chrome.action.setBadgeText({ text: "" });
         sendResponse({ ok: true });
       });
